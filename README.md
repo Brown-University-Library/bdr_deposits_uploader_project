@@ -13,3 +13,5 @@ To enable that:
 - settings.py was updated to specify `bdr_deposits_uploader_app.apps.BdrDepositsUploaderAppConfig`, instead of just `bdr_deposits_uploader_app`
 
 ---
+
+Testing!
