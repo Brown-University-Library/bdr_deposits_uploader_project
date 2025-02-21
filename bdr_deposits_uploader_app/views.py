@@ -2,7 +2,6 @@ import datetime
 import json
 import logging
 import pprint
-import uuid
 from pathlib import Path
 from urllib import parse
 from urllib.parse import quote
@@ -12,9 +11,6 @@ import trio
 from django.conf import settings as project_settings
 from django.contrib import auth
 from django.contrib.auth.decorators import login_required
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
-from django.core.files.uploadedfile import UploadedFile
 from django.http import HttpResponse, HttpResponseNotFound, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -22,7 +18,7 @@ from django.utils import text
 
 from bdr_deposits_uploader_app.forms.staff_form import StaffForm
 from bdr_deposits_uploader_app.forms.student_form import make_student_form_class
-from bdr_deposits_uploader_app.lib import config_new_helper, version_helper
+from bdr_deposits_uploader_app.lib import config_new_helper, uploaded_file_handler, version_helper
 from bdr_deposits_uploader_app.lib.shib_handler import shib_decorator
 from bdr_deposits_uploader_app.lib.version_helper import GatherCommitAndBranchData
 from bdr_deposits_uploader_app.models import AppConfig, Submission
@@ -251,43 +247,6 @@ def upload(request) -> HttpResponse:
     return render(request, 'uploader_select.html', context)
 
 
-## helper: handle uploaded file immediately
-def handle_uploaded_file(file_field: UploadedFile) -> Path:
-    ## use storage directory directly since MEDIA_ROOT includes it
-    staging_dir: Path = Path(default_storage.location)
-    staging_dir.mkdir(parents=True, exist_ok=True)
-    log.debug(f'staging_dir, ``{staging_dir}``')
-
-    ## generate unique filename with original extension
-    extension: str = Path(file_field.name).suffix
-    filename: str = f'{uuid.uuid4().hex}{extension}'
-    file_path: Path = staging_dir / filename
-    log.debug(f'file_path, ``{file_path}``')
-
-    ## compute relative path (since MEDIA_ROOT is the base, this is just the filename)
-    """
-    Apparently it's good to go through this relative-path rigamarole
-    because using default_storage.save() is supposed to be good, and it needs a relative path.
-    """
-    relative_path: Path = file_path.relative_to(staging_dir)
-    log.debug(f'relative_path, ``{relative_path}``')
-
-    ## read file content and wrap in ContentFile
-    file_content: bytes = file_field.read()
-    content_file: ContentFile = ContentFile(file_content)
-
-    ## convert the relative path to string for default_storage.save
-    relative_path_str: str = str(relative_path)
-    ## save the file using the default storage and get the saved path
-    saved_path: str = default_storage.save(relative_path_str, content_file)
-    log.debug(f'saved_path, ``{saved_path}``')
-
-    ## return the absolute, resolved path to the saved file
-    final_path: Path = (staging_dir / saved_path).resolve()
-    log.debug(f'final_path, ``{final_path}``')
-    return final_path
-
-
 @login_required
 def upload_slug(request, slug) -> HttpResponse | HttpResponseRedirect:
     """
@@ -320,8 +279,14 @@ def upload_slug(request, slug) -> HttpResponse | HttpResponseRedirect:
             log.debug(f'type(uploaded_file), ``{type(uploaded_file)}``')
             if uploaded_file:
                 cleaned_data['original_file_name'] = uploaded_file.name  # for confirmation-display
+                ## save uploaded main-file --------------------------
+                saved_path: Path = uploaded_file_handler.handle_uploaded_file(uploaded_file)  # path like `uuid4hex.ext`
+                ## make checksum ------------------------------------
+                result: tuple[str, str] = uploaded_file_handler.make_checksum(saved_path)
+                (checksum_type, checksum) = result
+                cleaned_data['checksum_type'] = checksum_type
+                cleaned_data['checksum'] = checksum
                 ## store uuid-path, not file-obj, in session --------
-                saved_path: Path = handle_uploaded_file(uploaded_file)  # path like `uuid4hex.ext`
                 cleaned_data['staged_file_path'] = str(saved_path)  # for Submission record, not for confirmation-display
                 del cleaned_data['main_file']  # remove the file-obj from the cleaned_data
             request.session['student_form_data'] = cleaned_data

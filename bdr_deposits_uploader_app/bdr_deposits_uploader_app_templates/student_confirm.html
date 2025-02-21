@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% load static %}
 
+
 {% block header_other %}
+
 <link rel="stylesheet" href="{% static 'bdr_deposits_uploader_app/css/common.css' %}">
 <title>Confirm Submission</title>
-
 
 <style>
     a#back-link {
@@ -50,11 +51,8 @@
     }
 </style>
   
-
-
-
-
 {% endblock header_other %}
+
 
 {% block main_content %}
 <section class="form-container">
@@ -63,13 +61,13 @@
     {% csrf_token %}
     <div class="form-section">
         {% for key, value in student_data.items %}
-        {% if key == 'staged_file_path' %}
-            {% comment %} Not displaying the file path {% endcomment %}
-        {% else %}
-            <div class="form-group">
-            <strong>{{ key|title }}:</strong> <span class="form-control-static">{{ value }}</span>
-            </div>
-        {% endif %}
+            {% if key == 'staged_file_path' or key == 'checksum_type' or key == 'checksum' %}
+                {% comment %} Not displaying this data, but it'll be saved to the db. {% endcomment %}
+            {% else %}
+                <div class="form-group">
+                <strong>{{ key|title }}:</strong> <span class="form-control-static">{{ value }}</span>
+                </div>
+            {% endif %}
         {% endfor %}
     </div>
     <div class="form-field">
